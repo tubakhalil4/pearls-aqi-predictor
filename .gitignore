@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Environment variables / secrets
+.env
+.env.*
+*.key
+*.pem
+
+# Hopsworks / API credentials
+hopsworks_api_key.txt
+api_key.txt
+secrets.json
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Python packaging
+*.egg-info/
+dist/
+build/
+
+# Model/cache directories
+.cache/
+__pycache__/
+
+# Colab temporary files
+/content/
+/tmp/
+
+# Keep important project files
+!app.py
+!README.md
+!requirements.txt
+!forecast_3days.csv

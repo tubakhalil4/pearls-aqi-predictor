@@ -1,0 +1,13 @@
+city,time,predicted_aqi,forecast,aqi_category
+Islamabad,2026-08-18 23:00:00+00:00,147.26561,24 Hours,Unhealthy for Sensitive Groups
+Islamabad,2026-08-19 23:00:00+00:00,150.99405,48 Hours,Unhealthy
+Islamabad,2026-08-20 23:00:00+00:00,145.2305,72 Hours,Unhealthy for Sensitive Groups
+Karachi,2026-08-18 23:00:00+00:00,70.624374,24 Hours,Moderate
+Karachi,2026-08-19 23:00:00+00:00,70.663574,48 Hours,Moderate
+Karachi,2026-08-20 23:00:00+00:00,71.2063,72 Hours,Moderate
+Lahore,2026-08-18 23:00:00+00:00,220.36777,24 Hours,Very Unhealthy
+Lahore,2026-08-19 23:00:00+00:00,217.34993,48 Hours,Very Unhealthy
+Lahore,2026-08-20 23:00:00+00:00,223.90015,72 Hours,Very Unhealthy
+Peshawar,2026-08-18 23:00:00+00:00,146.85422,24 Hours,Unhealthy for Sensitive Groups
+Peshawar,2026-08-19 23:00:00+00:00,147.75583,48 Hours,Unhealthy for Sensitive Groups
+Peshawar,2026-08-20 23:00:00+00:00,146.17284,72 Hours,Unhealthy for Sensitive Groups
