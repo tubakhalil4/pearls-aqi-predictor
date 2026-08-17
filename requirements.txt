@@ -1,11 +1,2 @@
 pandas==2.2.2
-numpy==2.0.2
-scikit-learn==1.6.1
-xgboost==3.3.0
-shap==0.52.0
 streamlit==1.60.0
-hopsworks==5.0.4
-openmeteo-requests
-requests-cache
-retry-requests
-openmeteo-sdk
