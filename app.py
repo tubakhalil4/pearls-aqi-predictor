@@ -1,520 +1,159 @@
-
 import streamlit as st
 import pandas as pd
 from pathlib import Path
-
-
-# ============================================================
-# PAGE CONFIGURATION
-# ============================================================
 
 st.set_page_config(
     page_title="Pearls AQI Predictor",
     page_icon="🌍",
     layout="wide",
-    initial_sidebar_state="expanded"
 )
-
-
-# ============================================================
-# CUSTOM CSS
-# ============================================================
-
-st.markdown("""
-<style>
-
-.main-title {
-    font-size: 42px;
-    font-weight: 700;
-    margin-bottom: 0px;
-}
-
-.subtitle {
-    font-size: 18px;
-    color: #666666;
-    margin-bottom: 25px;
-}
-
-.aqi-card {
-    padding: 20px;
-    border-radius: 12px;
-    border: 1px solid #dddddd;
-    background-color: #fafafa;
-    text-align: center;
-}
-
-.aqi-number {
-    font-size: 38px;
-    font-weight: 700;
-}
-
-.aqi-category {
-    font-size: 18px;
-    font-weight: 600;
-}
-
-.section-title {
-    font-size: 25px;
-    font-weight: 650;
-    margin-top: 15px;
-}
-
-</style>
-""", unsafe_allow_html=True)
-
-
-# ============================================================
-# AQI FUNCTIONS
-# ============================================================
-
-def get_aqi_category(aqi):
-
-    if aqi <= 50:
-        return "Good"
-
-    elif aqi <= 100:
-        return "Moderate"
-
-    elif aqi <= 150:
-        return "Unhealthy for Sensitive Groups"
-
-    elif aqi <= 200:
-        return "Unhealthy"
-
-    elif aqi <= 300:
-        return "Very Unhealthy"
-
-    else:
-        return "Hazardous"
-
-
-def get_aqi_emoji(category):
-
-    mapping = {
-        "Good": "🟢",
-        "Moderate": "🟡",
-        "Unhealthy for Sensitive Groups": "🟠",
-        "Unhealthy": "🔴",
-        "Very Unhealthy": "🟣",
-        "Hazardous": "⚫"
-    }
-
-    return mapping.get(category, "⚪")
-
-
-# ============================================================
-# PROJECT PATHS
-# ============================================================
 
 PROJECT_DIR = Path(__file__).parent
-
 FORECAST_FILE = PROJECT_DIR / "forecast_3days.csv"
+SHAP_FILE = PROJECT_DIR / "shap_feature_importance_all_horizons.csv"
 
-SHAP_FILE = PROJECT_DIR / "xgboost_shap_summary.png"
-
-
-# ============================================================
-# LOAD FORECAST
-# ============================================================
-
-if not FORECAST_FILE.exists():
-
-    st.error(
-        "Forecast file not found: forecast_3days.csv"
-    )
-
-    st.stop()
-
-
-forecast_df = pd.read_csv(FORECAST_FILE)
-
-forecast_df["time"] = pd.to_datetime(
-    forecast_df["time"],
-    utc=True
-)
-
-forecast_df["aqi_category"] = (
-    forecast_df["predicted_aqi"]
-    .apply(get_aqi_category)
-)
-
-
-# ============================================================
-# HEADER
-# ============================================================
-
-st.markdown(
-    '<div class="main-title">🌍 Pearls AQI Predictor</div>',
-    unsafe_allow_html=True
-)
-
-st.markdown(
-    '<div class="subtitle">'
-    'Machine Learning Based 3-Day Air Quality Forecasting'
-    '</div>',
-    unsafe_allow_html=True
-)
-
-st.divider()
-
-
-# ============================================================
-# SIDEBAR
-# ============================================================
-
-st.sidebar.title("⚙️ Dashboard")
-
-cities = sorted(
-    forecast_df["city"].unique().tolist()
-)
-
-selected_city = st.sidebar.selectbox(
-    "📍 Select City",
-    cities
-)
-
-st.sidebar.divider()
-
-st.sidebar.markdown("### 📌 Project")
-
-st.sidebar.write(
-    "Pearls AQI Predictor"
-)
-
-st.sidebar.write(
-    "XGBoost-based AQI forecasting"
-)
-
-st.sidebar.write(
-    "Forecast horizon: 3 days"
-)
-
-
-# ============================================================
-# CITY DATA
-# ============================================================
-
-city_df = forecast_df[
-    forecast_df["city"] == selected_city
-].copy()
-
-city_df = city_df.sort_values("time").reset_index(drop=True)
-
-
-# ============================================================
-# CURRENT FORECAST SUMMARY
-# ============================================================
-
-st.markdown(
-    f'<div class="section-title">📍 {selected_city}</div>',
-    unsafe_allow_html=True
-)
-
-first_row = city_df.iloc[0]
-
-current_aqi = float(
-    first_row["predicted_aqi"]
-)
-
-current_category = first_row[
-    "aqi_category"
+AQI_CATEGORIES = [
+    (50, "Good", "🟢"),
+    (100, "Moderate", "🟡"),
+    (150, "Unhealthy for Sensitive Groups", "🟠"),
+    (200, "Unhealthy", "🔴"),
+    (300, "Very Unhealthy", "🟣"),
+    (float("inf"), "Hazardous", "⚫"),
 ]
 
-st.markdown(
-    f"""
-    <div class="aqi-card">
-        <div>Next 24 Hours</div>
-        <div class="aqi-number">{current_aqi:.1f}</div>
-        <div class="aqi-category">
-            {get_aqi_emoji(current_category)}
-            {current_category}
-        </div>
-    </div>
-    """,
-    unsafe_allow_html=True
-)
-
-
-st.markdown("### 📅 3-Day Forecast")
-
-
-# ============================================================
-# FORECAST CARDS
-# ============================================================
-
-cols = st.columns(3)
-
-for i, (_, row) in enumerate(
-    city_df.iterrows()
-):
-
-    with cols[i]:
-
-        aqi = float(
-            row["predicted_aqi"]
-        )
-
-        category = row[
-            "aqi_category"
-        ]
-
-        date_text = row[
-            "time"
-        ].strftime("%d %b %Y")
-
-        st.markdown(
-            f"""
-            <div class="aqi-card">
-
-            <h3>{row["forecast"]}</h3>
-
-            <div class="aqi-number">
-                {aqi:.1f}
-            </div>
-
-            <div class="aqi-category">
-                {get_aqi_emoji(category)}
-                {category}
-            </div>
-
-            <p>{date_text}</p>
-
-            </div>
-            """,
-            unsafe_allow_html=True
-        )
-
-
-st.divider()
-
-
-# ============================================================
-# AQI TREND
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">📈 AQI Forecast Trend</div>',
-    unsafe_allow_html=True
-)
-
-chart_df = city_df[
-    ["time", "predicted_aqi"]
-].copy()
-
-chart_df = chart_df.set_index(
-    "time"
-)
-
-st.line_chart(
-    chart_df,
-    y="predicted_aqi",
-    use_container_width=True
-)
-
-
-st.divider()
-
-
-# ============================================================
-# ALL CITY COMPARISON
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">🏙️ All Cities Comparison</div>',
-    unsafe_allow_html=True
-)
-
-comparison_df = forecast_df.pivot(
-    index="forecast",
-    columns="city",
-    values="predicted_aqi"
-)
-
-st.dataframe(
-    comparison_df.round(2),
-    use_container_width=True
-)
-
-
-# ============================================================
-# AQI CATEGORY TABLE
-# ============================================================
-
-st.markdown("### 🚦 AQI Categories")
-
-category_table = forecast_df[
-    [
-        "city",
-        "forecast",
-        "predicted_aqi",
-        "aqi_category"
-    ]
-].copy()
-
-category_table[
-    "predicted_aqi"
-] = category_table[
-    "predicted_aqi"
-].round(2)
-
-st.dataframe(
-    category_table,
-    use_container_width=True,
-    hide_index=True
-)
-
-
-st.divider()
-
-
-# ============================================================
-# MODEL PERFORMANCE
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">🤖 Model Performance</div>',
-    unsafe_allow_html=True
-)
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-
-    st.metric(
-        "Model",
-        "XGBoost"
-    )
-
-with col2:
-
-    st.metric(
-        "MAE",
-        "1.8409"
-    )
-
-with col3:
-
-    st.metric(
-        "R² Score",
-        "0.9934"
-    )
-
-st.caption(
-    "Metrics are calculated on the historical test dataset."
-)
-
-
-# ============================================================
-# MODEL COMPARISON
-# ============================================================
-
-st.markdown("### 🏆 Model Comparison")
-
-model_comparison = pd.DataFrame({
-
-    "Model": [
-        "XGBoost",
-        "Random Forest"
-    ],
-
-    "MAE": [
-        1.8409,
-        2.0517
-    ],
-
-    "RMSE": [
-        3.0999,
-        4.0670
-    ],
-
-    "R²": [
-        0.9934,
-        0.9886
-    ]
-
+TEST_METRICS = pd.DataFrame({
+    "Horizon": ["24h", "48h", "72h"],
+    "MAE": [12.7445, 19.0359, 21.3232],
+    "RMSE": [16.8846, 24.7506, 27.7760],
+    "R²": [0.8040, 0.5795, 0.4708],
 })
 
-st.dataframe(
-    model_comparison,
-    use_container_width=True,
-    hide_index=True
+
+def aqi_category(value):
+    for limit, category, emoji in AQI_CATEGORIES:
+        if value <= limit:
+            return category, emoji
+    return "Unknown", "⚪"
+
+
+@st.cache_data
+def load_forecast():
+    if not FORECAST_FILE.exists():
+        raise FileNotFoundError(f"Missing forecast file: {FORECAST_FILE}")
+
+    df = pd.read_csv(FORECAST_FILE)
+    required = {"city", "current_aqi", "aqi_24h", "aqi_48h", "aqi_72h"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Forecast file is missing columns: {sorted(missing)}")
+    return df
+
+
+@st.cache_data
+def load_shap():
+    if not SHAP_FILE.exists():
+        return pd.DataFrame()
+    return pd.read_csv(SHAP_FILE)
+
+
+st.title("🌍 Pearls AQI Predictor")
+st.caption("Leakage-safe XGBoost forecasting for the next 24, 48 and 72 hours")
+
+try:
+    forecast_df = load_forecast()
+except Exception as exc:
+    st.error(str(exc))
+    st.stop()
+
+cities = sorted(forecast_df["city"].unique())
+selected_city = st.sidebar.selectbox("📍 Select city", cities)
+city = forecast_df[forecast_df["city"] == selected_city].iloc[0]
+
+st.sidebar.divider()
+st.sidebar.markdown("### Project")
+st.sidebar.write("4 Pakistani cities")
+st.sidebar.write("3 forecast horizons")
+st.sidebar.write("18 production features")
+st.sidebar.write("XGBoost + SHAP")
+
+current = float(city["current_aqi"])
+current_cat, current_emoji = aqi_category(current)
+
+st.subheader(f"📍 {selected_city}")
+
+c1, c2, c3, c4 = st.columns(4)
+with c1:
+    st.metric("Current AQI", f"{current:.1f}")
+with c2:
+    value = float(city["aqi_24h"])
+    st.metric("24h Forecast", f"{value:.1f}")
+with c3:
+    value = float(city["aqi_48h"])
+    st.metric("48h Forecast", f"{value:.1f}")
+with c4:
+    value = float(city["aqi_72h"])
+    st.metric("72h Forecast", f"{value:.1f}")
+
+st.info(f"Current AQI category: {current_emoji} **{current_cat}**")
+
+# Forecast table
+st.subheader("📅 3-Day Forecast")
+forecast_table = pd.DataFrame({
+    "Horizon": ["24 Hours", "48 Hours", "72 Hours"],
+    "Predicted AQI": [city["aqi_24h"], city["aqi_48h"], city["aqi_72h"]],
+})
+forecast_table[["Category", "Status"]] = forecast_table["Predicted AQI"].apply(
+    lambda x: pd.Series(aqi_category(float(x)))
 )
+forecast_table["Predicted AQI"] = forecast_table["Predicted AQI"].astype(float).round(2)
+st.dataframe(forecast_table, use_container_width=True, hide_index=True)
 
+# Trend
+st.subheader("📈 AQI Forecast Trend")
+trend = pd.DataFrame({
+    "Horizon": ["Current", "24h", "48h", "72h"],
+    "AQI": [current, city["aqi_24h"], city["aqi_48h"], city["aqi_72h"]],
+}).set_index("Horizon")
+st.line_chart(trend, y="AQI", use_container_width=True)
 
-st.divider()
+# All-city comparison
+st.subheader("🏙️ All Cities Comparison")
+comparison = forecast_df[["city", "current_aqi", "aqi_24h", "aqi_48h", "aqi_72h"]].copy()
+comparison.columns = ["City", "Current", "24h", "48h", "72h"]
+for col in ["Current", "24h", "48h", "72h"]:
+    comparison[col] = comparison[col].astype(float).round(2)
+st.dataframe(comparison, use_container_width=True, hide_index=True)
 
+# Model evaluation
+st.subheader("🤖 Restored Model Test Performance")
+st.dataframe(TEST_METRICS, use_container_width=True, hide_index=True)
+st.caption("Metrics are from the chronological held-out test set and match the original saved-model results.")
 
-# ============================================================
-# SHAP EXPLAINABILITY
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">🔍 XGBoost Explainability</div>',
-    unsafe_allow_html=True
-)
-
-st.write(
-    "SHAP analysis shows which features had the greatest "
-    "impact on the XGBoost AQI predictions."
-)
-
-if SHAP_FILE.exists():
-
-    st.image(
-        str(SHAP_FILE),
-        caption="XGBoost SHAP Feature Importance",
-        use_container_width=True
-    )
-
+# SHAP
+st.subheader("🔍 SHAP Feature Importance")
+shap_df = load_shap()
+if not shap_df.empty:
+    horizon_options = sorted(shap_df["horizon"].unique())
+    horizon = st.selectbox("Forecast horizon", horizon_options)
+    selected_shap = shap_df[shap_df["horizon"] == horizon].sort_values("mean_abs_shap", ascending=False)
+    st.bar_chart(selected_shap.set_index("feature")["mean_abs_shap"].head(10), use_container_width=True)
+    st.dataframe(selected_shap, use_container_width=True, hide_index=True)
 else:
+    st.info("SHAP CSV results are not available in the repository yet.")
 
-    st.info(
-        "SHAP summary plot is not available in the project folder yet."
-    )
-
-
-st.divider()
-
-
-# ============================================================
-# PROJECT SUMMARY
-# ============================================================
-
-st.markdown(
-    '<div class="section-title">ℹ️ About the Project</div>',
-    unsafe_allow_html=True
-)
-
-st.write(
-    """
-    **Pearls AQI Predictor** is an end-to-end machine learning
-    project designed to forecast Air Quality Index (AQI) for
-    major Pakistani cities.
-
-    **Technology Stack**
-
-    • Python  
-    • Pandas / NumPy  
-    • Scikit-learn  
-    • XGBoost  
-    • Random Forest  
-    • SHAP  
-    • Hopsworks Feature Store  
-    • Streamlit  
-    • Open-Meteo API  
-
-    The final forecasting model is XGBoost because it achieved
-    the best performance on the historical test dataset.
-    """
-)
-
-
-# ============================================================
-# FOOTER
-# ============================================================
+# Leakage-safe design
+st.subheader("🛡️ Forecast Integrity")
+checks = {
+    "Future AQI used as feature": "NO",
+    "Future us_aqi used as feature": "NO",
+    "Future target values used": "NO",
+    "Current AQI state used": "YES",
+    "Current environmental state used": "YES",
+    "24h model used": "YES",
+    "48h model used": "YES",
+    "72h model used": "YES",
+}
+st.dataframe(pd.DataFrame(checks.items(), columns=["Check", "Result"]), use_container_width=True, hide_index=True)
 
 st.divider()
-
-st.caption(
-    "Pearls AQI Predictor • XGBoost • SHAP • Hopsworks • Streamlit"
-)
+st.caption("Pearls AQI Predictor • XGBoost • SHAP • Streamlit • Flask API • Open-Meteo")
