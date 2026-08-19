@@ -1,27 +1,77 @@
 # 🌍 Pearls AQI Predictor
 
-An end-to-end machine learning system for forecasting the Air Quality Index (AQI) for Islamabad, Karachi, Lahore, and Peshawar for the next three days.
+**Pearls AQI Predictor** is an end-to-end machine-learning project that forecasts the Air Quality Index (AQI) for **Islamabad, Karachi, Lahore, and Peshawar** over the next **24, 48, and 72 hours**.
 
-The project combines environmental data collection, feature engineering, leakage-safe multi-horizon forecasting, XGBoost models, SHAP explainability, a Streamlit dashboard, and a Flask API.
+The final implementation combines environmental-data collection, feature engineering, chronological model validation, leakage-safe forecasting, XGBoost, SHAP explainability, a Streamlit dashboard, and a Flask API.
 
-## Project Status
+> **Final project state:** The forecasting pipeline, model validation, SHAP analysis, dashboard package, and Flask API are complete. Render deployment was not required for the final submission.
 
-The core forecasting pipeline is complete and the final production forecast has been generated using the restored 24h, 48h, and 72h XGBoost models.
+---
 
-**Forecast origin:** `2026-08-19 05:00 UTC`
+## 🎯 Project Objective
 
-**Production features:** 18
+The project follows the provided Pearls AQI Predictor specification:
 
-The final pipeline explicitly avoids future-AQI leakage: future `us_aqi`/AQI values are not used as model inputs. Current August 2026 AQI-derived state and current environmental conditions are used instead.
+- collect historical and future environmental data
+- build production-ready features
+- train and evaluate AQI forecasting models
+- forecast AQI at 24h, 48h, and 72h horizons
+- prevent future-AQI leakage
+- explain model predictions with SHAP
+- expose results through a Streamlit dashboard and Flask API
+- maintain the project in GitHub for reproducible submission
 
-## Supported Cities
+The final forecasting system uses **Open-Meteo** for environmental and air-quality data. Open-Meteo's pre-computed **US AQI (`us_aqi`)** is used as the AQI target; AQI is not manually calculated in the pipeline.
+
+---
+
+## 📍 Supported Cities
 
 - Islamabad
 - Karachi
 - Lahore
 - Peshawar
 
-## Final Forecast
+---
+
+## 🧠 Final Forecasting Pipeline
+
+```text
+Open-Meteo environmental data
+          ↓
+Historical / current AQI state
+          ↓
+Feature engineering
+          ↓
+18-feature production schema
+          ↓
+Restored XGBoost models
+          ↓
+Leakage-safe 24h / 48h / 72h forecasts
+          ↓
+SHAP explainability
+          ↓
+Streamlit Dashboard + Flask API
+```
+
+### Leakage-safe design
+
+The production forecast was explicitly checked to ensure:
+
+- ❌ Future AQI is not used as a model feature
+- ❌ Future `us_aqi` is not used as a model feature
+- ❌ Future target values are not used
+- ✅ Current AQI state is used to initialize AQI-derived features
+- ✅ Current environmental conditions are used
+- ✅ Future weather/pollutant inputs are used without their future AQI target
+
+This is important because the objective is genuine future forecasting rather than predicting AQI using information that would only be known after the forecast time.
+
+---
+
+## 📊 Final Production Forecast
+
+**Forecast origin:** `2026-08-19 05:00 UTC`
 
 | City | Current AQI | 24h | 48h | 72h |
 |---|---:|---:|---:|---:|
@@ -30,34 +80,35 @@ The final pipeline explicitly avoids future-AQI leakage: future `us_aqi`/AQI val
 | Lahore | 143.00 | 132.18 | 130.19 | 126.85 |
 | Peshawar | 140.00 | 130.69 | 122.40 | 121.96 |
 
-## Model Validation
+The forecast is stored in `forecast_3days.csv`.
 
-The saved XGBoost models were restored and validated against the original chronological test-set results.
+---
 
-| Horizon | MAE | RMSE | R² |
+## 🧪 Final Model Validation
+
+The saved/restored XGBoost models were validated on a **chronological hold-out test set**. The restored models reproduced the original test metrics exactly.
+
+| Forecast Horizon | MAE | RMSE | R² |
 |---|---:|---:|---:|
-| 24h | 12.7445 | 16.8846 | 0.8040 |
-| 48h | 19.0359 | 24.7506 | 0.5795 |
-| 72h | 21.3232 | 27.7760 | 0.4708 |
+| 24h | **12.7445** | **16.8846** | **0.8040** |
+| 48h | **19.0359** | **24.7506** | **0.5795** |
+| 72h | **21.3232** | **27.7760** | **0.4708** |
 
-These are the final restored-model test metrics and should be used in project reporting. They replace earlier dashboard metrics that came from a different experiment.
+### Validation split
 
-## Leakage-Safe Forecasting
+- Training rows: `56,140`
+- Test rows: `14,036`
+- Split type: chronological
+- Training ended: `2025-08-07 18:00 UTC`
+- Testing started: `2025-08-07 19:00 UTC`
 
-The final production forecast was verified with the following checks:
+The results show the expected reduction in predictive performance as the forecasting horizon increases, which is typical for longer-horizon AQI forecasting.
 
-- Future AQI used as a feature: **No**
-- Future `us_aqi` used as a feature: **No**
-- Future target values used: **No**
-- Current AQI state used: **Yes**
-- Current environmental state used: **Yes**
-- 24h XGBoost model used: **Yes**
-- 48h XGBoost model used: **Yes**
-- 72h XGBoost model used: **Yes**
+---
 
-## Production Features
+## 🧩 Production Feature Schema
 
-The exact 18-feature schema is:
+The final production models use exactly **18 features**, in this order:
 
 1. `pm2_5`
 2. `pm10`
@@ -78,67 +129,136 @@ The exact 18-feature schema is:
 17. `aqi_change_rate`
 18. `aqi_rolling_6h`
 
-## Data Sources
+### Feature groups
 
-The project uses Open-Meteo weather and air-quality APIs.
+**Pollutants**
+
+- PM2.5
+- PM10
+- carbon monoxide
+- nitrogen dioxide
+- ozone
+- sulphur dioxide
+
+**Weather**
+
+- temperature
+- humidity
+- wind speed
+- wind direction
+- pressure
+- rain
+
+**Time**
+
+- hour
+- day
+- month
+- day of week
+
+**AQI-derived**
+
+- `aqi_change_rate`
+- `aqi_rolling_6h`
+
+---
+
+## 🌦️ Data Source
+
+The final pipeline uses the **Open-Meteo Weather API and Air Quality API**.
 
 Environmental inputs include:
 
 - PM2.5
 - PM10
-- Carbon monoxide
-- Nitrogen dioxide
-- Ozone
-- Sulphur dioxide
-- Temperature
-- Relative humidity
-- Precipitation/rain
-- Wind speed
-- Wind direction
-- Atmospheric pressure
+- carbon monoxide
+- nitrogen dioxide
+- ozone
+- sulphur dioxide
+- temperature
+- relative humidity
+- precipitation/rain
+- wind speed
+- wind direction
+- atmospheric pressure
 
-Open-Meteo's pre-computed `us_aqi` is used as the historical AQI target. AQI is not manually calculated in the pipeline.
+Open-Meteo's pre-computed `us_aqi` is used as the historical AQI target.
 
-## Feature Engineering
+The original project specification mentioned AQICN or OpenWeather as possible external data sources. The implemented pipeline uses **Open-Meteo instead**, consistently for both historical and forecast environmental inputs.
 
-The pipeline creates:
+---
 
-- Time features: `hour`, `day`, `month`, `day_of_week`
-- AQI change rate: `aqi_change_rate`
-- Six-hour AQI rolling feature: `aqi_rolling_6h`
+## 🛠️ Feature Engineering
 
-## SHAP Explainability
+The pipeline generates:
 
-SHAP is used to explain the restored XGBoost forecasts. The analysis was completed separately for the 24h, 48h, and 72h models.
+- `hour`
+- `day`
+- `month`
+- `day_of_week`
+- `aqi_change_rate`
+- `aqi_rolling_6h`
 
-The strongest recurring feature was `aqi_rolling_6h`, followed by pollutant and time/environmental variables depending on the forecast horizon.
+For production forecasting, the AQI-derived features are initialized from the **latest available current AQI state**, rather than from an outdated historical observation.
 
-## Dashboard
+The final August 2026 forecast used current AQI observations from the forecast origin of `2026-08-19 05:00 UTC`.
 
-The Streamlit dashboard provides:
+---
 
-- City selection
-- Current AQI
-- 24h, 48h, and 72h forecasts
+## 🔍 SHAP Explainability
+
+SHAP was used to explain the restored XGBoost models separately for each forecast horizon.
+
+The strongest recurring feature was:
+
+- `aqi_rolling_6h`
+
+Other important features varied by horizon and included pollutant, weather, and calendar variables such as PM2.5, ozone, carbon monoxide, sulphur dioxide, month, day, hour, and AQI change rate.
+
+The combined SHAP results are stored at:
+
+```text
+shap/shap_feature_importance_all_horizons.csv
+```
+
+A visualization is also included:
+
+```text
+xgboost_shap_summary.png
+```
+
+---
+
+## 📊 Streamlit Dashboard
+
+The repository contains a Streamlit dashboard that presents the final forecasting results.
+
+Dashboard functionality includes:
+
+- city selection
+- current AQI
+- 24h / 48h / 72h forecasts
 - AQI category classification
-- Forecast trend visualization
-- All-city comparison
-- Restored model test metrics
+- forecast comparison and visualization
+- all-city comparison
+- final model metrics
 - SHAP feature importance
-- Forecast-integrity/leakage checks
+- forecast-integrity/leakage information
 
-Run locally with:
+### Run locally
 
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
 ```
 
-## Flask API
+---
 
-The repository also includes a Flask API.
+## 🔌 Flask API
 
-Run it with:
+A Flask API is included to expose the forecast data programmatically.
+
+Run locally with:
 
 ```bash
 python api.py
@@ -152,7 +272,13 @@ GET /api/forecast
 GET /api/forecast/<city>
 ```
 
-## AQI Categories
+The API serves the generated forecast artifact from `forecast_3days.csv`.
+
+---
+
+## ⚠️ AQI Categories
+
+The dashboard uses the following US-AQI-style categories:
 
 | AQI Range | Category |
 |---:|---|
@@ -163,23 +289,30 @@ GET /api/forecast/<city>
 | 201–300 | Very Unhealthy |
 | 301+ | Hazardous |
 
-## Technology Stack
+---
 
-| Technology | Purpose |
+## 💻 Technology Stack
+
+| Technology | Role in the project |
 |---|---|
 | Python | Application and ML pipeline |
-| Pandas / NumPy | Data processing |
-| Scikit-learn | Model evaluation and ML utilities |
-| XGBoost | Final AQI forecasting models |
-| TensorFlow | Deep-learning experimentation |
-| SHAP | Explainable AI |
-| Hopsworks | Feature Store / ML infrastructure |
+| Pandas / NumPy | Data processing and feature engineering |
+| Scikit-learn | Evaluation and ML utilities |
+| XGBoost | Final 24h / 48h / 72h forecasting models |
+| SHAP | Model explainability |
 | Streamlit | Interactive dashboard |
 | Flask | Forecast API |
-| Open-Meteo | Environmental data |
-| GitHub Actions | Repository validation / CI |
+| Open-Meteo | Environmental and air-quality data |
+| Git / GitHub | Version control and project submission |
+| GitHub Actions | Repository validation workflow |
 
-## Repository Structure
+TensorFlow was part of the broader technology specification/experimentation scope, but the **final production forecasting models documented here are XGBoost models**.
+
+Hopsworks/Feature Store was part of the project's feature-store workflow, while the final repository submission focuses on the reproducible forecasting artifacts and application layer.
+
+---
+
+## 📁 Repository Structure
 
 ```text
 pearls-aqi-predictor/
@@ -188,17 +321,114 @@ pearls-aqi-predictor/
 ├── forecast_3days.csv
 ├── requirements.txt
 ├── runtime.txt
+├── Procfile
+├── render.yaml
 ├── README.md
 ├── .gitignore
-├── .streamlit/
-│   └── config.toml
+├── xgboost_shap_summary.png
 ├── shap/
 │   └── shap_feature_importance_all_horizons.csv
+├── .streamlit/
+│   └── config.toml
 └── .github/
     └── workflows/
         └── validate.yml
 ```
 
-## Final Project Goal
+---
 
-Pearls AQI Predictor demonstrates an end-to-end AQI forecasting workflow: environmental data → feature engineering → historical model training/evaluation → saved multi-horizon XGBoost models → leakage-safe future inputs → 24h/48h/72h forecasts → SHAP explainability → Streamlit dashboard and Flask API.
+## 🚀 Installation
+
+Clone the repository:
+
+```bash
+git clone https://github.com/tubakhalil4/pearls-aqi-predictor.git
+cd pearls-aqi-predictor
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Start the Streamlit dashboard:
+
+```bash
+streamlit run app.py
+```
+
+Start the Flask API separately when required:
+
+```bash
+python api.py
+```
+
+---
+
+## 📌 Deployment Status
+
+The repository includes deployment configuration files such as `Procfile`, `render.yaml`, and `runtime.txt`.
+
+The application was validated locally/in the development environment, but **no public Render deployment is claimed as part of the final submission**.
+
+This avoids representing an un-deployed service as a production URL.
+
+---
+
+## 🔄 Automation / CI-CD Scope
+
+The repository contains a GitHub Actions validation workflow for repository-level checks.
+
+The final submission should distinguish between:
+
+- **implemented:** forecasting pipeline, validation, SHAP analysis, Streamlit dashboard, Flask API, repository validation
+- **not claimed as live production infrastructure:** continuously scheduled hourly feature ingestion, daily automated retraining, and public Render hosting
+
+These infrastructure extensions can be added later without changing the validated forecasting results.
+
+---
+
+## ✅ Final Project Verification
+
+The final repository package was verified with:
+
+- required application files present
+- `app.py` syntax valid
+- `api.py` syntax valid
+- dashboard dependencies available
+- forecast CSV readable
+- SHAP CSV readable
+- four supported cities present
+- exact 18-feature production schema preserved
+- future AQI leakage checks passed
+- 24h / 48h / 72h models available
+- Git working tree clean
+
+---
+
+## 🏁 Final Project Outcome
+
+Pearls AQI Predictor demonstrates a complete AQI forecasting workflow:
+
+```text
+Environmental data
+        ↓
+Feature engineering
+        ↓
+Historical model training & chronological evaluation
+        ↓
+Restored multi-horizon XGBoost models
+        ↓
+Current-state initialization
+        ↓
+Leakage-safe future environmental inputs
+        ↓
+24h / 48h / 72h AQI forecasts
+        ↓
+SHAP explainability
+        ↓
+Streamlit dashboard + Flask API
+```
+
+The final implementation is designed to provide an understandable, reproducible, and leakage-safe three-day AQI forecasting system for the four supported Pakistani cities.
