@@ -1,0 +1,47 @@
+name: Validate Pearls AQI Predictor
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile app.py api.py
+
+      - name: Validate forecast data
+        run: |
+          python - <<'PY'
+          import pandas as pd
+          from pathlib import Path
+
+          path = Path("forecast_3days.csv")
+          assert path.exists(), "forecast_3days.csv is missing"
+
+          df = pd.read_csv(path)
+          required = {
+              "city", "forecast_origin", "current_aqi",
+              "aqi_24h", "aqi_48h", "aqi_72h"
+          }
+          assert required.issubset(df.columns)
+          assert set(df["city"]) == {"Islamabad", "Karachi", "Lahore", "Peshawar"}
+          assert len(df) == 4
+          print("Forecast validation passed")
+          PY
