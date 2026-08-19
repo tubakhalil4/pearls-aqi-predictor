@@ -11,7 +11,7 @@ st.set_page_config(
 
 PROJECT_DIR = Path(__file__).resolve().parent
 FORECAST_FILE = PROJECT_DIR / "forecast_3days.csv"
-SHAP_FILE = PROJECT_DIR / "shap_feature_importance_all_horizons.csv"
+SHAP_FILE = PROJECT_DIR / "shap" / "shap_feature_importance_all_horizons.csv"
 
 AQI_CATEGORIES = [
     (50, "Good", "🟢"),
@@ -186,7 +186,7 @@ if not shap_df.empty and {"horizon", "feature", "mean_abs_shap"}.issubset(shap_d
 else:
     st.info(
         "SHAP results are not included yet. The dashboard remains functional; "
-        "add shap_feature_importance_all_horizons.csv to enable this section."
+        "add shap/shap_feature_importance_all_horizons.csv to enable this section."
     )
 
 st.subheader("🛡️ Forecast Integrity")
