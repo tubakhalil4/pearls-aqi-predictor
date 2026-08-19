@@ -1,5 +1,5 @@
 streamlit
-pandas
+pandas==2.2.3
 numpy
 xgboost
 shap
@@ -7,3 +7,4 @@ scikit-learn
 plotly
 requests
 flask
+gunicorn
