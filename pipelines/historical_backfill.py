@@ -17,7 +17,7 @@ CITIES = {
     "Peshawar": (34.0151, 71.5249),
 }
 
-WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+WEATHER_URL = "https://archive-api.open-meteo.com/v1/archive"
 AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
 OUTPUT = Path("data/historical_raw_backfill.csv")
