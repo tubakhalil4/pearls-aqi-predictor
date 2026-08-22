@@ -1,0 +1,30 @@
+name: Historical Data Backfill
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas numpy requests openmeteo-requests requests-cache retry-requests
+
+      - name: Run historical backfill
+        run: |
+          python pipelines/historical_backfill.py
+
+      - name: Validate historical dataset
+        run: |
+          python pipelines/validate_historical_data.py
