@@ -28,3 +28,11 @@ jobs:
       - name: Validate historical dataset
         run: |
           python pipelines/validate_historical_data.py
+
+      - name: Build historical production features
+        run: |
+          python pipelines/build_historical_features.py
+
+      - name: Validate historical production features
+        run: |
+          python pipelines/validate_historical_features.py
