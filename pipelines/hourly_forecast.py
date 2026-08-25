@@ -1,0 +1,613 @@
+import os
+from pathlib import Path
+
+import hopsworks
+import numpy as np
+import pandas as pd
+import openmeteo_requests
+import requests_cache
+from retry_requests import retry
+import xgboost as xgb
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+OUTPUT_FILE = PROJECT_ROOT / "forecast_3days.csv"
+
+
+CITIES = {
+    "Islamabad": (33.6844, 73.0479),
+    "Karachi": (24.8607, 67.0011),
+    "Lahore": (31.5204, 74.3587),
+    "Peshawar": (34.0151, 71.5249),
+}
+
+WEATHER_URL = "https://api.open-meteo.com/v1/forecast"
+AIR_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
+
+FEATURE_GROUP_NAME = "aqi_features_v2"
+FEATURE_GROUP_VERSION = 1
+
+MODEL_NAMES = {
+    "24h": "aqi_forecast_24h",
+    "48h": "aqi_forecast_48h",
+    "72h": "aqi_forecast_72h",
+}
+
+FEATURE_COLUMNS = [
+    "pm2_5",
+    "pm10",
+    "carbon_monoxide",
+    "nitrogen_dioxide",
+    "ozone",
+    "sulphur_dioxide",
+    "temperature",
+    "humidity",
+    "wind_speed",
+    "wind_direction",
+    "pressure",
+    "rain",
+    "hour",
+    "day",
+    "month",
+    "day_of_week",
+    "aqi_change_rate",
+    "aqi_rolling_6h",
+]
+
+
+def create_api_client():
+    cache_session = requests_cache.CachedSession(
+        ".cache",
+        expire_after=300,
+    )
+
+    retry_session = retry(
+        cache_session,
+        retries=5,
+        backoff_factor=0.2,
+    )
+
+    return openmeteo_requests.Client(
+        session=retry_session
+    )
+
+
+def fetch_open_meteo(city, latitude, longitude):
+    print(f"\nFetching API data: {city}")
+
+    client = create_api_client()
+
+    weather_params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": [
+            "temperature_2m",
+            "relative_humidity_2m",
+            "precipitation",
+            "wind_speed_10m",
+            "wind_direction_10m",
+            "pressure_msl",
+        ],
+        "forecast_days": 4,
+        "timezone": "UTC",
+    }
+
+    air_params = {
+        "latitude": latitude,
+        "longitude": longitude,
+        "hourly": [
+            "pm2_5",
+            "pm10",
+            "carbon_monoxide",
+            "nitrogen_dioxide",
+            "ozone",
+            "sulphur_dioxide",
+            "us_aqi",
+        ],
+        "forecast_days": 4,
+        "timezone": "UTC",
+    }
+
+    weather_response = client.weather_api(
+        WEATHER_URL,
+        params=weather_params,
+    )[0]
+
+    air_response = client.weather_api(
+        AIR_URL,
+        params=air_params,
+    )[0]
+
+    weather = weather_response.Hourly()
+    air = air_response.Hourly()
+
+    weather_times = pd.date_range(
+        start=pd.to_datetime(
+            weather.Time(),
+            unit="s",
+            utc=True,
+        ),
+        end=pd.to_datetime(
+            weather.TimeEnd(),
+            unit="s",
+            utc=True,
+        ),
+        freq=pd.Timedelta(
+            seconds=weather.Interval()
+        ),
+        inclusive="left",
+    )
+
+    air_times = pd.date_range(
+        start=pd.to_datetime(
+            air.Time(),
+            unit="s",
+            utc=True,
+        ),
+        end=pd.to_datetime(
+            air.TimeEnd(),
+            unit="s",
+            utc=True,
+        ),
+        freq=pd.Timedelta(
+            seconds=air.Interval()
+        ),
+        inclusive="left",
+    )
+
+    weather_df = pd.DataFrame({
+        "time": weather_times,
+        "temperature": weather.Variables(0).ValuesAsNumpy(),
+        "humidity": weather.Variables(1).ValuesAsNumpy(),
+        "rain": weather.Variables(2).ValuesAsNumpy(),
+        "wind_speed": weather.Variables(3).ValuesAsNumpy(),
+        "wind_direction": weather.Variables(4).ValuesAsNumpy(),
+        "pressure": weather.Variables(5).ValuesAsNumpy(),
+    })
+
+    air_df = pd.DataFrame({
+        "time": air_times,
+        "pm2_5": air.Variables(0).ValuesAsNumpy(),
+        "pm10": air.Variables(1).ValuesAsNumpy(),
+        "carbon_monoxide": air.Variables(2).ValuesAsNumpy(),
+        "nitrogen_dioxide": air.Variables(3).ValuesAsNumpy(),
+        "ozone": air.Variables(4).ValuesAsNumpy(),
+        "sulphur_dioxide": air.Variables(5).ValuesAsNumpy(),
+        "aqi": air.Variables(6).ValuesAsNumpy(),
+    })
+
+    return pd.merge(
+        weather_df,
+        air_df,
+        on="time",
+        how="inner",
+    ).sort_values("time").reset_index(drop=True)
+
+
+def prepare_future_features(raw_future, latest_state):
+    df = raw_future.copy()
+
+    df["hour"] = df["time"].dt.hour.astype("int64")
+    df["day"] = df["time"].dt.day.astype("int64")
+    df["month"] = df["time"].dt.month.astype("int64")
+    df["day_of_week"] = (
+        df["time"].dt.dayofweek.astype("int64")
+    )
+
+    # Current API AQI is used as the production state.
+    # For future rows, preserve the current trend/rolling state
+    # as model context.
+    current_change = float(
+        latest_state["aqi_change_rate"]
+    )
+
+    current_rolling = float(
+        latest_state["aqi_rolling_6h"]
+    )
+
+    df["aqi_change_rate"] = current_change
+    df["aqi_rolling_6h"] = current_rolling
+
+    return df
+
+
+def select_forecast_rows(
+    future,
+    forecast_origin,
+):
+    targets = [
+        forecast_origin + pd.Timedelta(hours=24),
+        forecast_origin + pd.Timedelta(hours=48),
+        forecast_origin + pd.Timedelta(hours=72),
+    ]
+
+    selected = []
+
+    for target in targets:
+        exact = future[
+            future["time"] == target
+        ]
+
+        if exact.empty:
+            candidates = future[
+                future["time"] > target
+            ]
+
+            if candidates.empty:
+                raise RuntimeError(
+                    f"No API row available for {target}"
+                )
+
+            row = candidates.iloc[0]
+        else:
+            row = exact.iloc[0]
+
+        selected.append(row)
+
+    return selected
+
+
+def load_models(model_registry):
+    models = {}
+
+    for horizon, model_name in MODEL_NAMES.items():
+
+        print(
+            f"\nLoading Model Registry model: "
+            f"{model_name} v1"
+        )
+
+        model = model_registry.get_model(
+            model_name,
+            version=1,
+        )
+
+        local_dir = model.download()
+
+        artifacts = list(
+            Path(local_dir).glob("*.json")
+        )
+
+        if not artifacts:
+            raise RuntimeError(
+                f"No XGBoost JSON artifact found for "
+                f"{model_name}"
+            )
+
+        artifact = artifacts[0]
+
+        print("Artifact:", artifact)
+
+        booster = xgb.XGBRegressor()
+
+        booster.load_model(
+            str(artifact)
+        )
+
+        models[horizon] = booster
+
+        print(
+            "Features:",
+            len(
+                booster.get_booster().feature_names
+                or []
+            ),
+        )
+
+        model_features = (
+            booster.get_booster().feature_names
+        )
+
+        if model_features is not None:
+            if list(model_features) != FEATURE_COLUMNS:
+                raise RuntimeError(
+                    f"Feature schema mismatch for "
+                    f"{model_name}"
+                )
+
+        print("Feature schema: OK")
+
+    return models
+
+
+def read_feature_store(feature_store):
+    print("\n" + "=" * 70)
+    print("READING HOPSWORKS FEATURE STORE")
+    print("=" * 70)
+
+    fg = feature_store.get_feature_group(
+        name=FEATURE_GROUP_NAME,
+        version=FEATURE_GROUP_VERSION,
+    )
+
+    feature_df = fg.read()
+
+    feature_df["time"] = pd.to_datetime(
+        feature_df["time"],
+        utc=True,
+    )
+
+    feature_df = feature_df.sort_values(
+        ["city", "time"]
+    )
+
+    latest_states = (
+        feature_df
+        .groupby("city", as_index=False)
+        .tail(1)
+        .copy()
+    )
+
+    print(
+        f"Feature group: {FEATURE_GROUP_NAME}"
+    )
+    print(
+        f"Version: {FEATURE_GROUP_VERSION}"
+    )
+    print(
+        f"Rows read: {len(feature_df)}"
+    )
+
+    print("\nLatest Feature Store state:")
+    print(
+        latest_states[
+            [
+                "city",
+                "time",
+                "aqi",
+                "aqi_change_rate",
+                "aqi_rolling_6h",
+            ]
+        ].to_string(index=False)
+    )
+
+    return feature_df, latest_states
+
+
+def main():
+
+    print("=" * 70)
+    print("PEARLS AQI PREDICTOR — HOURLY PRODUCTION FORECAST")
+    print("=" * 70)
+
+    # ------------------------------------------------------------
+    # HOPSWORKS
+    # ------------------------------------------------------------
+
+    print("=" * 70)
+    print("CONNECTING TO HOPSWORKS")
+    print("=" * 70)
+
+    project = hopsworks.login()
+
+    print("Project:", project.name)
+
+    feature_store = project.get_feature_store()
+    model_registry = project.get_model_registry()
+
+    print("Feature Store connected")
+    print("Model Registry connected")
+
+    # ------------------------------------------------------------
+    # FEATURE STORE
+    # ------------------------------------------------------------
+
+    feature_df, latest_states = read_feature_store(
+        feature_store
+    )
+
+    # ------------------------------------------------------------
+    # MODELS
+    # ------------------------------------------------------------
+
+    models = load_models(
+        model_registry
+    )
+
+    output_rows = []
+
+    # ------------------------------------------------------------
+    # CURRENT PRODUCTION FORECAST
+    # ------------------------------------------------------------
+
+    for city, (latitude, longitude) in CITIES.items():
+
+        city_state = latest_states[
+            latest_states["city"] == city
+        ]
+
+        if city_state.empty:
+            raise RuntimeError(
+                f"No current Feature Store state for {city}"
+            )
+
+        latest_state = city_state.iloc[0]
+
+        raw_future = fetch_open_meteo(
+            city,
+            latitude,
+            longitude,
+        )
+
+        # --------------------------------------------------------
+        # IMPORTANT PRODUCTION STATE LOGIC
+        #
+        # Feature Store contains historical model context.
+        # Open-Meteo supplies the CURRENT production state.
+        # --------------------------------------------------------
+
+        api_current = raw_future.iloc[0]
+
+        current_aqi = float(
+            api_current["aqi"]
+        )
+
+        forecast_origin = pd.to_datetime(
+            api_current["time"],
+            utc=True,
+        )
+
+        # Find the current API row's preceding API value
+        # to calculate a real current AQI change rate.
+        current_rows = raw_future[
+            raw_future["time"] <= forecast_origin
+        ].copy()
+
+        if len(current_rows) >= 2:
+            previous_aqi = float(
+                current_rows.iloc[-2]["aqi"]
+            )
+
+            current_change_rate = (
+                current_aqi - previous_aqi
+            )
+        else:
+            current_change_rate = float(
+                latest_state["aqi_change_rate"]
+            )
+
+        # Six-hour rolling API AQI.
+        rolling_rows = current_rows.tail(6)
+
+        if not rolling_rows.empty:
+            current_rolling_6h = float(
+                rolling_rows["aqi"].mean()
+            )
+        else:
+            current_rolling_6h = float(
+                latest_state["aqi_rolling_6h"]
+            )
+
+        print("\n" + "=" * 70)
+        print(city)
+        print("=" * 70)
+        print(
+            "Forecast origin:",
+            forecast_origin,
+        )
+        print(
+            "Current AQI:",
+            current_aqi,
+        )
+        print(
+            "Current AQI change rate:",
+            current_change_rate,
+        )
+        print(
+            "Current AQI rolling 6h:",
+            current_rolling_6h,
+        )
+
+        future = prepare_future_features(
+            raw_future,
+            latest_state,
+        )
+
+        future = future[
+            future["time"] > forecast_origin
+        ].copy()
+
+        future["aqi_change_rate"] = (
+            current_change_rate
+        )
+
+        future["aqi_rolling_6h"] = (
+            current_rolling_6h
+        )
+
+        if future.empty:
+            raise RuntimeError(
+                f"No future API rows available for {city}"
+            )
+
+        selected = select_forecast_rows(
+            future,
+            forecast_origin,
+        )
+
+        predictions = {}
+
+        for horizon, row in zip(
+            ["24h", "48h", "72h"],
+            selected,
+        ):
+
+            X = pd.DataFrame(
+                [row[FEATURE_COLUMNS].to_dict()]
+            )
+
+            X = X[
+                FEATURE_COLUMNS
+            ]
+
+            prediction = float(
+                models[horizon].predict(X)[0]
+            )
+
+            prediction = max(
+                0.0,
+                prediction,
+            )
+
+            predictions[horizon] = prediction
+
+            print(
+                f"{horizon} prediction: "
+                f"{prediction:.2f}"
+            )
+
+        output_rows.append(
+            {
+                "city": city,
+                "forecast_origin": forecast_origin,
+                "current_aqi": current_aqi,
+                "aqi_24h": predictions["24h"],
+                "aqi_48h": predictions["48h"],
+                "aqi_72h": predictions["72h"],
+                "forecast_24h_time": (
+                    forecast_origin
+                    + pd.Timedelta(hours=24)
+                ),
+                "forecast_48h_time": (
+                    forecast_origin
+                    + pd.Timedelta(hours=48)
+                ),
+                "forecast_72h_time": (
+                    forecast_origin
+                    + pd.Timedelta(hours=72)
+                ),
+            }
+        )
+
+    # ------------------------------------------------------------
+    # OUTPUT
+    # ------------------------------------------------------------
+
+    forecast_df = pd.DataFrame(
+        output_rows
+    )
+
+    forecast_df.to_csv(
+        OUTPUT_FILE,
+        index=False,
+    )
+
+    print("\n" + "=" * 70)
+    print("FINAL HOURLY FORECAST")
+    print("=" * 70)
+
+    print(
+        forecast_df.to_string(index=False)
+    )
+
+    print(
+        f"\nOutput: {OUTPUT_FILE}"
+    )
+
+    print("\n" + "=" * 70)
+    print("✅ HOURLY PRODUCTION FORECAST COMPLETE")
+    print("=" * 70)
+
+
+if __name__ == "__main__":
+    main()
