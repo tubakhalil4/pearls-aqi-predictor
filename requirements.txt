@@ -8,3 +8,7 @@ plotly
 requests
 flask
 gunicorn
+hopsworks
+openmeteo-requests
+requests-cache
+retry-requests
