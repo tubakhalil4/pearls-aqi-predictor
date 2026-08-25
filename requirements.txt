@@ -1,6 +1,6 @@
 streamlit
 pandas==2.2.3
-numpy
+numpy==1.26.4
 xgboost
 shap
 scikit-learn
@@ -8,7 +8,7 @@ plotly
 requests
 flask
 gunicorn
-hopsworks
+hopsworks==5.0.5
 openmeteo-requests
 requests-cache
 retry-requests
