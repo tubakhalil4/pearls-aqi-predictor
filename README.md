@@ -1,4 +1,4 @@
-# 🌍 Pearls AQI Predictor
+#  Pearls AQI Predictor
 
 **Pearls AQI Predictor** is an end-to-end machine-learning project that forecasts the Air Quality Index (AQI) for **Islamabad, Karachi, Lahore, and Peshawar** over the next **24, 48, and 72 hours**.
 
@@ -8,7 +8,7 @@ The final implementation combines environmental-data collection, feature enginee
 
 ---
 
-## 🎯 Project Objective
+##  Project Objective
 
 The project follows the provided Pearls AQI Predictor specification:
 
@@ -25,7 +25,7 @@ The final forecasting system uses **Open-Meteo** for environmental and air-quali
 
 ---
 
-## 📍 Supported Cities
+##  Supported Cities
 
 - Islamabad
 - Karachi
@@ -34,7 +34,7 @@ The final forecasting system uses **Open-Meteo** for environmental and air-quali
 
 ---
 
-## 🧠 Final Forecasting Pipeline
+##  Final Forecasting Pipeline
 
 ```text
 Open-Meteo environmental data
@@ -58,18 +58,18 @@ Streamlit Dashboard + Flask API
 
 The production forecast was explicitly checked to ensure:
 
-- ❌ Future AQI is not used as a model feature
-- ❌ Future `us_aqi` is not used as a model feature
-- ❌ Future target values are not used
-- ✅ Current AQI state is used to initialize AQI-derived features
-- ✅ Current environmental conditions are used
-- ✅ Future weather/pollutant inputs are used without their future AQI target
+-  Future AQI is not used as a model feature
+-  Future `us_aqi` is not used as a model feature
+-  Future target values are not used
+-  Current AQI state is used to initialize AQI-derived features
+-  Current environmental conditions are used
+-  Future weather/pollutant inputs are used without their future AQI target
 
 This is important because the objective is genuine future forecasting rather than predicting AQI using information that would only be known after the forecast time.
 
 ---
 
-## 📊 Final Production Forecast
+##  Final Production Forecast
 
 **Forecast origin:** `2026-08-19 05:00 UTC`
 
@@ -84,7 +84,7 @@ The forecast is stored in `forecast_3days.csv`.
 
 ---
 
-## 🧪 Final Model Validation
+##  Final Model Validation
 
 The saved/restored XGBoost models were validated on a **chronological hold-out test set**. The restored models reproduced the original test metrics exactly.
 
@@ -106,7 +106,7 @@ The results show the expected reduction in predictive performance as the forecas
 
 ---
 
-## 🧩 Production Feature Schema
+##  Production Feature Schema
 
 The final production models use exactly **18 features**, in this order:
 
@@ -163,7 +163,7 @@ The final production models use exactly **18 features**, in this order:
 
 ---
 
-## 🌦️ Data Source
+##  Data Source
 
 The final pipeline uses the **Open-Meteo Weather API and Air Quality API**.
 
@@ -188,7 +188,7 @@ The original project specification mentioned AQICN or OpenWeather as possible ex
 
 ---
 
-## 🛠️ Feature Engineering
+##  Feature Engineering
 
 The pipeline generates:
 
@@ -205,7 +205,7 @@ The final August 2026 forecast used current AQI observations from the forecast o
 
 ---
 
-## 🔍 SHAP Explainability
+##  SHAP Explainability
 
 SHAP was used to explain the restored XGBoost models separately for each forecast horizon.
 
@@ -229,7 +229,7 @@ xgboost_shap_summary.png
 
 ---
 
-## 📊 Streamlit Dashboard
+##  Streamlit Dashboard
 
 The repository contains a Streamlit dashboard that presents the final forecasting results.
 
@@ -254,7 +254,7 @@ streamlit run app.py
 
 ---
 
-## 🔌 Flask API
+##  Flask API
 
 A Flask API is included to expose the forecast data programmatically.
 
@@ -276,7 +276,7 @@ The API serves the generated forecast artifact from `forecast_3days.csv`.
 
 ---
 
-## ⚠️ AQI Categories
+##  AQI Categories
 
 The dashboard uses the following US-AQI-style categories:
 
@@ -291,7 +291,7 @@ The dashboard uses the following US-AQI-style categories:
 
 ---
 
-## 💻 Technology Stack
+##  Technology Stack
 
 | Technology | Role in the project |
 |---|---|
@@ -312,7 +312,7 @@ Hopsworks/Feature Store was part of the project's feature-store workflow, while 
 
 ---
 
-## 📁 Repository Structure
+##  Repository Structure
 
 ```text
 pearls-aqi-predictor/
@@ -337,7 +337,7 @@ pearls-aqi-predictor/
 
 ---
 
-## 🚀 Installation
+##  Installation
 
 Clone the repository:
 
@@ -366,7 +366,7 @@ python api.py
 
 ---
 
-## 📌 Deployment Status
+##  Deployment Status
 
 The repository includes deployment configuration files such as `Procfile`, `render.yaml`, and `runtime.txt`.
 
@@ -376,7 +376,7 @@ This avoids representing an un-deployed service as a production URL.
 
 ---
 
-## 🔄 Automation / CI-CD Scope
+##  Automation / CI-CD Scope
 
 The repository contains a GitHub Actions validation workflow for repository-level checks.
 
@@ -389,7 +389,7 @@ These infrastructure extensions can be added later without changing the validate
 
 ---
 
-## ✅ Final Project Verification
+##  Final Project Verification
 
 The final repository package was verified with:
 
@@ -407,7 +407,7 @@ The final repository package was verified with:
 
 ---
 
-## 🏁 Final Project Outcome
+##  Final Project Outcome
 
 Pearls AQI Predictor demonstrates a complete AQI forecasting workflow:
 
