@@ -310,6 +310,133 @@ def load_models(model_registry):
     return models
 
 
+
+def write_current_features_to_feature_store(
+    feature_store,
+    feature_rows,
+):
+    """
+    Persist fresh hourly Open-Meteo feature rows into
+    the existing Hopsworks Feature Group.
+
+    Feature Group:
+        aqi_features_v2, version 1
+
+    Primary key:
+        city + time
+
+    Event time:
+        time
+    """
+
+    print("\n" + "=" * 70)
+    print("WRITING FRESH FEATURES TO HOPSWORKS FEATURE STORE")
+    print("=" * 70)
+
+    if feature_rows is None or feature_rows.empty:
+        raise RuntimeError(
+            "No feature rows available for Hopsworks write."
+        )
+
+    fg = feature_store.get_feature_group(
+        name=FEATURE_GROUP_NAME,
+        version=FEATURE_GROUP_VERSION,
+    )
+
+    write_df = feature_rows.copy()
+
+    # Ensure event time is UTC-aware.
+    write_df["time"] = pd.to_datetime(
+        write_df["time"],
+        utc=True,
+    )
+
+    # The production Feature Group schema.
+    required_columns = [
+        "city",
+        "time",
+        "pm2_5",
+        "pm10",
+        "carbon_monoxide",
+        "nitrogen_dioxide",
+        "ozone",
+        "sulphur_dioxide",
+        "temperature",
+        "humidity",
+        "wind_speed",
+        "wind_direction",
+        "pressure",
+        "rain",
+        "hour",
+        "day",
+        "month",
+        "day_of_week",
+        "aqi_change_rate",
+        "aqi_rolling_6h",
+        "aqi",
+    ]
+
+    missing = [
+        col
+        for col in required_columns
+        if col not in write_df.columns
+    ]
+
+    if missing:
+        raise RuntimeError(
+            "Feature Store write schema mismatch. "
+            f"Missing columns: {missing}"
+        )
+
+    # Keep exactly the production schema and order.
+    write_df = write_df[required_columns].copy()
+
+    # Remove accidental duplicate primary keys.
+    write_df = (
+        write_df
+        .drop_duplicates(
+            subset=["city", "time"],
+            keep="last",
+        )
+        .reset_index(drop=True)
+    )
+
+    print(
+        f"Rows being written: {len(write_df)}"
+    )
+
+    print(
+        "Latest rows:\n"
+        + write_df[
+            [
+                "city",
+                "time",
+                "aqi",
+                "aqi_change_rate",
+                "aqi_rolling_6h",
+            ]
+        ].to_string(index=False)
+    )
+
+    # Insert into the existing Feature Group.
+    # city + time are the primary key, so repeated hourly
+    # executions remain idempotent at the logical key level.
+    fg.insert(
+        write_df,
+        write_options={
+            "wait_for_job": True,
+        },
+    )
+
+    print(
+        f"✅ Successfully wrote "
+        f"{len(write_df)} row(s) to "
+        f"{FEATURE_GROUP_NAME} v{FEATURE_GROUP_VERSION}"
+    )
+
+    return write_df
+
+
 def read_feature_store(feature_store):
     print("\n" + "=" * 70)
     print("READING HOPSWORKS FEATURE STORE")
@@ -501,6 +628,40 @@ def main():
         future = prepare_future_features(
             raw_future,
             latest_state,
+        )
+
+        # ----------------------------------------------------
+        # Persist the freshest hourly API feature row.
+        # This makes Hopsworks the production Feature Store,
+        # instead of using it only as a historical read source.
+        # ----------------------------------------------------
+        current_api_rows = future.copy()
+
+        if current_api_rows.empty:
+            raise RuntimeError(
+                f"No API feature rows available for {city}"
+            )
+
+        current_api_time = pd.to_datetime(
+            current_api_rows["time"],
+            utc=True,
+        ).max()
+
+        current_api_row = (
+            current_api_rows[
+                current_api_rows["time"] == current_api_time
+            ]
+            .copy()
+        )
+
+        if current_api_row.empty:
+            raise RuntimeError(
+                f"Could not identify current API row for {city}"
+            )
+
+        write_current_features_to_feature_store(
+            feature_store,
+            current_api_row,
         )
 
         future = future[
