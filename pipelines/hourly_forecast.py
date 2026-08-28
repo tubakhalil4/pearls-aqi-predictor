@@ -376,6 +376,38 @@ def write_current_features_to_feature_store(
         "aqi",
     ]
 
+    # ENSURE_CITY_COLUMN_FOR_HOPSWORKS
+    # Hopsworks feature group primary key is ['city', 'time'].
+    # Some pandas transformations can leave city as an index or
+    # remove it from the dataframe. Restore it before validation.
+
+    if "city" not in current_features.columns:
+
+        if current_features.index.name == "city":
+            current_features = current_features.reset_index()
+
+        elif "city" in current_features.index.names:
+            current_features = current_features.reset_index()
+
+        elif len(current_features) == 1 and "city" in locals():
+            current_features = current_features.copy()
+            current_features.insert(
+                0,
+                "city",
+                str(city),
+            )
+
+    if "city" not in current_features.columns:
+        raise RuntimeError(
+            "Feature Store write could not determine city column."
+        )
+
+    current_features["city"] = (
+        current_features["city"]
+        .astype(str)
+    )
+
+
     missing = [
         col
         for col in required_columns
