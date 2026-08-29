@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-
+import joblib
 import hopsworks
 import numpy as np
 import pandas as pd
@@ -244,68 +244,46 @@ def select_forecast_rows(
     return selected
 
 
+
+
 def load_models(model_registry):
     models = {}
 
     for horizon, model_name in MODEL_NAMES.items():
 
-        print(
-            f"\nLoading Model Registry model: "
-            f"{model_name} v1"
-        )
+        print(f"\nLoading Model Registry model: {model_name}")
 
-        model = model_registry.get_model(
+        model = model_registry.get_best_model(
             model_name,
-            version=1,
+            metric="rmse",
+            direction="min",
         )
 
         local_dir = model.download()
 
-        artifacts = list(
-            Path(local_dir).glob("*.json")
-        )
+        pkl_path = Path(local_dir) / "model.pkl"
 
-        if not artifacts:
+        if not pkl_path.exists():
             raise RuntimeError(
-                f"No XGBoost JSON artifact found for "
-                f"{model_name}"
+                f"No model.pkl artifact found for {model_name}"
             )
 
-        artifact = artifacts[0]
-
-        print("Artifact:", artifact)
-
-        booster = xgb.XGBRegressor()
-
-        booster.load_model(
-            str(artifact)
-        )
-
+        booster = joblib.load(pkl_path)
         models[horizon] = booster
 
-        print(
-            "Features:",
-            len(
-                booster.get_booster().feature_names
-                or []
-            ),
-        )
-
-        model_features = (
-            booster.get_booster().feature_names
-        )
-
-        if model_features is not None:
-            if list(model_features) != FEATURE_COLUMNS:
+        feature_columns_path = Path(local_dir) / "feature_columns.json"
+        if feature_columns_path.exists():
+            saved_features = pd.read_json(
+                feature_columns_path, typ="series"
+            ).tolist()
+            if list(saved_features) != FEATURE_COLUMNS:
                 raise RuntimeError(
-                    f"Feature schema mismatch for "
-                    f"{model_name}"
+                    f"Feature schema mismatch for {model_name}"
                 )
 
         print("Feature schema: OK")
 
     return models
-
 
 def write_all_features_to_feature_store(
     feature_store,
