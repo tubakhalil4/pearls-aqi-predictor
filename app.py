@@ -71,7 +71,7 @@ def load_shap():
 # Streamlit Cloud can keep a browser session alive while GitHub Actions
 # updates forecast_3days.csv. This fragment forces a full app rerun every
 # five minutes so the dashboard automatically reads the newest committed CSV.
-@st.fragment(run_every="5m")
+@st.fragment(run_every="30m")
 def auto_refresh():
     st.rerun()
 
