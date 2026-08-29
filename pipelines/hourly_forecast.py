@@ -307,11 +307,29 @@ def load_models(model_registry):
     return models
 
 
-def write_current_features_to_feature_store(
+def write_all_features_to_feature_store(
     feature_store,
     feature_rows,
-    city,
 ):
+    """
+    Persist fresh hourly Open-Meteo feature rows for ALL cities
+    into the existing Hopsworks Feature Group in a single insert.
+
+    Batching all cities into one fg.insert() call means only one
+    materialization job is launched per hourly run, instead of
+    one per city -- this avoids queuing multiple jobs back-to-back
+    on Hopsworks' shared free-tier job execution slot.
+
+    Feature Group:
+        aqi_features_v2, version 1
+
+    Primary key:
+        city + time
+
+    Event time:
+        time
+    """
+
     print("\n" + "=" * 70)
     print("WRITING FRESH FEATURES TO HOPSWORKS FEATURE STORE")
     print("=" * 70)
@@ -328,26 +346,50 @@ def write_current_features_to_feature_store(
 
     write_df = feature_rows.copy()
 
+    # Ensure event time is UTC-aware.
     write_df["time"] = pd.to_datetime(
         write_df["time"],
         utc=True,
     )
 
     if "city" not in write_df.columns:
-        write_df.insert(0, "city", str(city))
+        raise RuntimeError(
+            "Feature Store write could not determine city column. "
+            "Ensure 'city' is attached to each row before calling "
+            "write_all_features_to_feature_store()."
+        )
 
     write_df["city"] = write_df["city"].astype(str)
 
+    # The production Feature Group schema.
     required_columns = [
-        "city", "time", "pm2_5", "pm10", "carbon_monoxide",
-        "nitrogen_dioxide", "ozone", "sulphur_dioxide", "temperature",
-        "humidity", "wind_speed", "wind_direction", "pressure", "rain",
-        "hour", "day", "month", "day_of_week",
-        "aqi_change_rate", "aqi_rolling_6h", "aqi",
+        "city",
+        "time",
+        "pm2_5",
+        "pm10",
+        "carbon_monoxide",
+        "nitrogen_dioxide",
+        "ozone",
+        "sulphur_dioxide",
+        "temperature",
+        "humidity",
+        "wind_speed",
+        "wind_direction",
+        "pressure",
+        "rain",
+        "hour",
+        "day",
+        "month",
+        "day_of_week",
+        "aqi_change_rate",
+        "aqi_rolling_6h",
+        "aqi",
     ]
 
     missing = [
-        col for col in required_columns if col not in write_df.columns
+        col
+        for col in required_columns
+        if col not in write_df.columns
     ]
 
     if missing:
@@ -356,35 +398,62 @@ def write_current_features_to_feature_store(
             f"Missing columns: {missing}"
         )
 
+    # Keep exactly the production schema and order.
     write_df = write_df[required_columns].copy()
 
     # Hopsworks feature group columns are 'double' (float64).
-    # Open-Meteo returns float32 arrays, which Hopsworks rejects.
+    # Open-Meteo returns float32 arrays, which Hopsworks' schema
+    # check rejects even though the values are compatible.
     float_columns = [
-        "pm2_5", "pm10", "carbon_monoxide", "nitrogen_dioxide",
-        "ozone", "sulphur_dioxide", "temperature", "humidity",
-        "wind_speed", "wind_direction", "pressure", "rain", "aqi",
+        "pm2_5",
+        "pm10",
+        "carbon_monoxide",
+        "nitrogen_dioxide",
+        "ozone",
+        "sulphur_dioxide",
+        "temperature",
+        "humidity",
+        "wind_speed",
+        "wind_direction",
+        "pressure",
+        "rain",
+        "aqi",
     ]
     write_df[float_columns] = write_df[float_columns].astype("float64")
 
+    # Remove accidental duplicate primary keys.
     write_df = (
         write_df
-        .drop_duplicates(subset=["city", "time"], keep="last")
+        .drop_duplicates(
+            subset=["city", "time"],
+            keep="last",
+        )
         .reset_index(drop=True)
     )
 
-    print(f"Rows being written: {len(write_df)}")
+    print(
+        f"Rows being written: {len(write_df)}"
+    )
 
     print(
         "Latest rows:\n"
         + write_df[
-            ["city", "time", "aqi", "aqi_change_rate", "aqi_rolling_6h"]
+            [
+                "city",
+                "time",
+                "aqi",
+                "aqi_change_rate",
+                "aqi_rolling_6h",
+            ]
         ].to_string(index=False)
     )
 
+    # Single insert for all cities -> single materialization job.
     fg.insert(
         write_df,
-        write_options={"wait_for_job": False},
+        write_options={
+            "wait_for_job": True,
+        },
     )
 
     print(
@@ -394,6 +463,7 @@ def write_current_features_to_feature_store(
     )
 
     return write_df
+
 
 def read_feature_store(feature_store):
     print("\n" + "=" * 70)
@@ -490,6 +560,7 @@ def main():
     )
 
     output_rows = []
+    feature_rows_all = []
 
     # ------------------------------------------------------------
     # CURRENT PRODUCTION FORECAST
@@ -602,11 +673,10 @@ def main():
                 f"Could not identify current API row for {city}"
             )
 
-        write_current_features_to_feature_store(
-            feature_store,
-            current_api_row,
-            city,
-        )
+        # Attach city, then queue this row for a single combined
+        # write after the loop finishes for all cities.
+        current_api_row.insert(0, "city", city)
+        feature_rows_all.append(current_api_row)
 
         future = future[
             future["time"] > forecast_origin
@@ -683,6 +753,20 @@ def main():
                 ),
             }
         )
+
+    # ------------------------------------------------------------
+    # SINGLE COMBINED FEATURE STORE WRITE (all 4 cities at once)
+    # ------------------------------------------------------------
+
+    combined_features = pd.concat(
+        feature_rows_all,
+        ignore_index=True,
+    )
+
+    write_all_features_to_feature_store(
+        feature_store,
+        combined_features,
+    )
 
     # ------------------------------------------------------------
     # OUTPUT
