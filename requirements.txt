@@ -8,7 +8,8 @@ plotly
 requests
 flask
 gunicorn
-hopsworks==5.0.5
+hopsworks[python]==5.0.5
+confluent-kafka
 openmeteo-requests
 requests-cache
 retry-requests
