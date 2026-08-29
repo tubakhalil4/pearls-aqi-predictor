@@ -384,7 +384,7 @@ def write_current_features_to_feature_store(
 
     fg.insert(
         write_df,
-        write_options={"wait_for_job": True},
+        write_options={"wait_for_job": False},
     )
 
     print(
