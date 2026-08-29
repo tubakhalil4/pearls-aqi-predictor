@@ -194,9 +194,6 @@ def prepare_future_features(raw_future, latest_state):
         df["time"].dt.dayofweek.astype("int64")
     )
 
-    # Current API AQI is used as the production state.
-    # For future rows, preserve the current trend/rolling state
-    # as model context.
     current_change = float(
         latest_state["aqi_change_rate"]
     )
@@ -310,10 +307,10 @@ def load_models(model_registry):
     return models
 
 
-
 def write_current_features_to_feature_store(
     feature_store,
     feature_rows,
+    city,
 ):
     """
     Persist fresh hourly Open-Meteo feature rows into
@@ -351,6 +348,13 @@ def write_current_features_to_feature_store(
         utc=True,
     )
 
+    # fetch_open_meteo() never attaches a "city" column, so
+    # add it here explicitly before validating the schema.
+    if "city" not in write_df.columns:
+        write_df.insert(0, "city", str(city))
+
+    write_df["city"] = write_df["city"].astype(str)
+
     # The production Feature Group schema.
     required_columns = [
         "city",
@@ -375,38 +379,6 @@ def write_current_features_to_feature_store(
         "aqi_rolling_6h",
         "aqi",
     ]
-
-    # ENSURE_CITY_COLUMN_FOR_HOPSWORKS
-    # Hopsworks feature group primary key is ['city', 'time'].
-    # Some pandas transformations can leave city as an index or
-    # remove it from the dataframe. Restore it before validation.
-
-    if "city" not in current_features.columns:
-
-        if current_features.index.name == "city":
-            current_features = current_features.reset_index()
-
-        elif "city" in current_features.index.names:
-            current_features = current_features.reset_index()
-
-        elif len(current_features) == 1 and "city" in locals():
-            current_features = current_features.copy()
-            current_features.insert(
-                0,
-                "city",
-                str(city),
-            )
-
-    if "city" not in current_features.columns:
-        raise RuntimeError(
-            "Feature Store write could not determine city column."
-        )
-
-    current_features["city"] = (
-        current_features["city"]
-        .astype(str)
-    )
-
 
     missing = [
         col
@@ -588,13 +560,6 @@ def main():
             longitude,
         )
 
-        # --------------------------------------------------------
-        # IMPORTANT PRODUCTION STATE LOGIC
-        #
-        # Feature Store contains historical model context.
-        # Open-Meteo supplies the CURRENT production state.
-        # --------------------------------------------------------
-
         api_current = raw_future.iloc[0]
 
         current_aqi = float(
@@ -606,8 +571,6 @@ def main():
             utc=True,
         )
 
-        # Find the current API row's preceding API value
-        # to calculate a real current AQI change rate.
         current_rows = raw_future[
             raw_future["time"] <= forecast_origin
         ].copy()
@@ -625,7 +588,6 @@ def main():
                 latest_state["aqi_change_rate"]
             )
 
-        # Six-hour rolling API AQI.
         rolling_rows = current_rows.tail(6)
 
         if not rolling_rows.empty:
@@ -662,11 +624,6 @@ def main():
             latest_state,
         )
 
-        # ----------------------------------------------------
-        # Persist the freshest hourly API feature row.
-        # This makes Hopsworks the production Feature Store,
-        # instead of using it only as a historical read source.
-        # ----------------------------------------------------
         current_api_rows = future.copy()
 
         if current_api_rows.empty:
@@ -694,6 +651,7 @@ def main():
         write_current_features_to_feature_store(
             feature_store,
             current_api_row,
+            city,
         )
 
         future = future[
