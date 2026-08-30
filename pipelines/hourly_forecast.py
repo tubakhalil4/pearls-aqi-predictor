@@ -55,6 +55,209 @@ FEATURE_COLUMNS = [
 ]
 
 
+
+def write_current_features_to_feature_store(
+    feature_store,
+    feature_rows,
+):
+    """
+    Persist fresh hourly Open-Meteo feature rows into
+    the existing Hopsworks Feature Group.
+
+    Feature Group:
+        aqi_features_v2, version 1
+
+    Primary key:
+        city + time
+
+    Event time:
+        time
+    """
+
+    print("\n" + "=" * 70)
+    print("WRITING FRESH FEATURES TO HOPSWORKS FEATURE STORE")
+    print("=" * 70)
+
+    if feature_rows is None or feature_rows.empty:
+        raise RuntimeError(
+            "No feature rows available for Hopsworks write."
+        )
+
+    fg = feature_store.get_feature_group(
+        name=FEATURE_GROUP_NAME,
+        version=FEATURE_GROUP_VERSION,
+    )
+
+    # ------------------------------------------------
+    # Always work from feature_rows.
+    # NEVER reference write_df here.
+    # ------------------------------------------------
+
+    write_df = feature_rows.copy()
+
+    # ------------------------------------------------
+    # Ensure event time is UTC-aware.
+    # ------------------------------------------------
+
+    if "time" not in write_df.columns:
+        raise RuntimeError(
+            "Feature Store write requires a 'time' column."
+        )
+
+    write_df["time"] = pd.to_datetime(
+        write_df["time"],
+        utc=True,
+    )
+
+    # ------------------------------------------------
+    # Production Feature Group schema.
+    # ------------------------------------------------
+
+    required_columns = [
+        "city",
+        "time",
+        "pm2_5",
+        "pm10",
+        "carbon_monoxide",
+        "nitrogen_dioxide",
+        "ozone",
+        "sulphur_dioxide",
+        "temperature",
+        "humidity",
+        "wind_speed",
+        "wind_direction",
+        "pressure",
+        "rain",
+        "hour",
+        "day",
+        "month",
+        "day_of_week",
+        "aqi_change_rate",
+        "aqi_rolling_6h",
+        "aqi",
+    ]
+
+    # ------------------------------------------------
+    # Protect primary key.
+    # Hopsworks primary key = city + time
+    # ------------------------------------------------
+
+    if "city" not in write_df.columns:
+        raise RuntimeError(
+            "Feature Store write could not determine city column."
+        )
+
+    write_df["city"] = (
+        write_df["city"]
+        .astype(str)
+        .str.strip()
+    )
+
+    if write_df["city"].eq("").any():
+        raise RuntimeError(
+            "Feature Store write contains an empty city value."
+        )
+
+    # ------------------------------------------------
+    # Validate schema BEFORE selecting columns.
+    # ------------------------------------------------
+
+    missing = [
+        col
+        for col in required_columns
+        if col not in write_df.columns
+    ]
+
+    if missing:
+        raise RuntimeError(
+            "Feature Store write schema mismatch. "
+            f"Missing columns: {missing}"
+        )
+
+    # ------------------------------------------------
+    # Keep exactly production schema/order.
+    # ------------------------------------------------
+
+    write_df = write_df[required_columns].copy()
+
+    # ------------------------------------------------
+    # Remove duplicate primary keys.
+    # ------------------------------------------------
+
+    write_df = (
+        write_df
+        .drop_duplicates(
+            subset=["city", "time"],
+            keep="last",
+        )
+        .reset_index(drop=True)
+    )
+
+    if write_df.empty:
+        raise RuntimeError(
+            "No rows remain after primary-key deduplication."
+        )
+
+    # ------------------------------------------------
+    # Final primary-key validation.
+    # ------------------------------------------------
+
+    if write_df[["city", "time"]].isna().any().any():
+        raise RuntimeError(
+            "Feature Store primary key contains NULL values."
+        )
+
+    duplicate_keys = write_df.duplicated(
+        subset=["city", "time"]
+    ).sum()
+
+    if duplicate_keys:
+        raise RuntimeError(
+            f"Feature Store write still contains "
+            f"{duplicate_keys} duplicate primary key(s)."
+        )
+
+    # ------------------------------------------------
+    # Logging.
+    # ------------------------------------------------
+
+    print(
+        f"Rows being written: {len(write_df)}"
+    )
+
+    print(
+        "Latest rows:\n"
+        + write_df[
+            [
+                "city",
+                "time",
+                "aqi",
+                "aqi_change_rate",
+                "aqi_rolling_6h",
+            ]
+        ].to_string(index=False)
+    )
+
+    # ------------------------------------------------
+    # Hopsworks insert.
+    # ------------------------------------------------
+
+    fg.insert(
+        write_df,
+        write_options={
+            "wait_for_job": True,
+        },
+    )
+
+    print(
+        f"Successfully wrote "
+        f"{len(write_df)} row(s) to "
+        f"{FEATURE_GROUP_NAME} v{FEATURE_GROUP_VERSION}"
+    )
+
+    return write_df
+
+
 def create_api_client():
     cache_session = requests_cache.CachedSession(
         ".cache",

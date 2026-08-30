@@ -56,3 +56,4 @@ __pycache__/
 !README.md
 !requirements.txt
 !forecast_3days.csv
+.cache.sqlite
