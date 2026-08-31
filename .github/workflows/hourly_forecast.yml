@@ -92,5 +92,20 @@ jobs:
             echo "No forecast file changes to commit."
           else
             git commit -m "Update hourly AQI forecast"
-            git push origin HEAD:main
+
+            success=false
+            for attempt in 1 2 3 4 5; do
+              echo "Push attempt $attempt..."
+              if git pull --rebase origin main && git push origin HEAD:main; then
+                success=true
+                break
+              fi
+              echo "Push attempt $attempt failed, retrying in 10 seconds..."
+              sleep 10
+            done
+
+            if [ "$success" = false ]; then
+              echo "::error::Failed to push forecast after 5 attempts"
+              exit 1
+            fi
           fi
