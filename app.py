@@ -39,6 +39,7 @@ def aqi_category(value):
     return "Unknown", "⚪"
 
 
+@st.cache_data(ttl=1800)
 def load_forecast():
     if not FORECAST_FILE.exists():
         raise FileNotFoundError(
@@ -62,21 +63,12 @@ def load_forecast():
     return df
 
 
+@st.cache_data(ttl=1800)
 def load_shap():
     if not SHAP_FILE.exists():
         return pd.DataFrame()
     return pd.read_csv(SHAP_FILE)
 
-
-# Streamlit Cloud can keep a browser session alive while GitHub Actions
-# updates forecast_3days.csv. This fragment forces a full app rerun every
-# five minutes so the dashboard automatically reads the newest committed CSV.
-@st.fragment(run_every="30m")
-def auto_refresh():
-    st.rerun()
-
-
-auto_refresh()
 
 st.title("🌍 Pearls AQI Predictor")
 st.caption(
@@ -107,7 +99,11 @@ st.sidebar.write("3 forecast horizons")
 st.sidebar.write("18 production features")
 st.sidebar.write("XGBoost + SHAP")
 st.sidebar.write("Open-Meteo inputs")
-st.sidebar.write("Auto-refresh: every 5 minutes")
+st.sidebar.write("Data cached for 30 minutes")
+
+if st.sidebar.button("🔄 Refresh now"):
+    st.cache_data.clear()
+    st.rerun()
 
 current = float(city["current_aqi"])
 current_cat, current_emoji = aqi_category(current)
@@ -235,7 +231,7 @@ with st.expander("ℹ️ About this project"):
         - Current AQI-derived features initialize the production forecast state.
         - XGBoost models provide the three forecast horizons.
         - SHAP explains feature importance when the SHAP result file is available.
-        - The dashboard automatically refreshes every 5 minutes while open.
+        - Forecast data is cached for 30 minutes; use the sidebar Refresh button for the latest data immediately.
         """
     )
 
