@@ -1,5 +1,7 @@
 #  Pearls AQI Predictor
 
+https://pearls-aqipredictor.streamlit.app/
+
 **Pearls AQI Predictor** is an end-to-end machine-learning project that forecasts the Air Quality Index (AQI) for **Islamabad, Karachi, Lahore, and Peshawar** over the next **24, 48, and 72 hours**.
 
 The final implementation combines environmental-data collection, feature engineering, chronological model validation, leakage-safe forecasting, XGBoost, SHAP explainability, a Streamlit dashboard, and a Flask API.
