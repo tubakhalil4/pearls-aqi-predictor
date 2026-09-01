@@ -109,7 +109,11 @@ current = float(city["current_aqi"])
 current_cat, current_emoji = aqi_category(current)
 
 st.subheader(f"📍 {selected_city}")
-st.caption(f"Forecast origin: {forecast_origin.strftime('%Y-%m-%d %H:%M UTC')}")
+current_date = forecast_origin.tz_convert("Asia/Karachi")
+
+st.caption(
+    f"Forecast date: {current_date.strftime('%d %B %Y')}"
+)
 
 c1, c2, c3, c4 = st.columns(4)
 with c1:
