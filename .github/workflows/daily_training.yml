@@ -1,51 +1,69 @@
 name: Daily AQI Model Training
 
-   on:
-     schedule:
-       - cron: "0 2 * * *"
-     workflow_dispatch:
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
 
-   permissions:
-     contents: write
+permissions:
+  contents: write
 
-   env:
-     HOPSWORKS_PROJECT: Tuba_Pearl_Project
-     HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
+env:
+  HOPSWORKS_PROJECT: Tuba_Pearl_Project
+  HOPSWORKS_API_KEY: ${{ secrets.HOPSWORKS_API_KEY }}
 
-   jobs:
-     train:
-       runs-on: ubuntu-latest
-       timeout-minutes: 30
+jobs:
+  train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
-       steps:
-         - name: Checkout repository
-           uses: actions/checkout@v6
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
-         - name: Set up Python
-           uses: actions/setup-python@v6
-           with:
-             python-version: "3.12"
-             cache: pip
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
 
-         - name: Install dependencies
-           run: |
-             python -m pip install --upgrade pip
-             pip install -r requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-         - name: Validate training pipeline syntax
-           run: python -m py_compile pipelines/training_pipeline.py
+      - name: Validate training pipeline syntax
+        run: python -m py_compile pipelines/training_pipeline.py
 
-         - name: Run daily training pipeline
-           run: python pipelines/training_pipeline.py
+      - name: Run daily training pipeline
+        run: python pipelines/training_pipeline.py
 
-         - name: Commit model comparison report
-           run: |
-             git config user.name "github-actions[bot]"
-             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-             git add model_comparison_report.csv
-             if git diff --cached --quiet; then
-               echo "No comparison report changes to commit."
-             else
-               git commit -m "Update daily model comparison report"
-               git push origin HEAD:main
-             fi
+      - name: Commit model comparison report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add model_comparison_report.csv
+
+          if git diff --cached --quiet; then
+            echo "No comparison report changes to commit."
+          else
+            git commit -m "Update daily model comparison report"
+
+            success=false
+            for attempt in 1 2 3 4 5; do
+              echo "Push attempt $attempt..."
+              if git pull --rebase origin main && git push origin HEAD:main; then
+                success=true
+                break
+              fi
+              echo "Push attempt $attempt failed, retrying in 10 seconds..."
+              sleep 10
+            done
+
+            if [ "$success" = false ]; then
+              echo "::error::Failed to push model comparison report after 5 attempts"
+              exit 1
+            fi
+          fi
