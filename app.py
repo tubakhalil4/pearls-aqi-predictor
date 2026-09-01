@@ -22,14 +22,30 @@ AQI_CATEGORIES = [
     (float("inf"), "Hazardous", "⚫"),
 ]
 
-TEST_METRICS = pd.DataFrame(
-    {
-        "Horizon": ["24h", "48h", "72h"],
-        "MAE": [12.7445, 19.0359, 21.3232],
-        "RMSE": [16.8846, 24.7506, 27.7760],
-        "R²": [0.8040, 0.5795, 0.4708],
-    }
-)
+COMPARISON_FILE = PROJECT_DIR / "model_comparison_report.csv"
+
+
+@st.cache_data(ttl=1800)
+def load_model_comparison():
+    if not COMPARISON_FILE.exists():
+        return pd.DataFrame()
+
+    df = pd.read_csv(COMPARISON_FILE)
+    df = df.rename(columns={df.columns[0]: "model"})
+
+    df["horizon_order"] = df["horizon"].map({"24h": 0, "48h": 1, "72h": 2})
+    df = df.sort_values(["horizon_order", "rmse"]).drop(columns="horizon_order")
+
+    df = df.rename(
+        columns={
+            "model": "Model",
+            "horizon": "Horizon",
+            "rmse": "RMSE",
+            "mae": "MAE",
+            "r2": "R²",
+        }
+    )
+    return df[["Horizon", "Model", "MAE", "RMSE", "R²"]]
 
 
 def aqi_category(value):
@@ -172,14 +188,23 @@ for column in ["Current", "24h", "48h", "72h"]:
     comparison[column] = comparison[column].astype(float).round(2)
 st.dataframe(comparison, use_container_width=True, hide_index=True)
 
-st.subheader("🤖 Restored Model Test Performance")
-metrics_display = TEST_METRICS.copy()
-metrics_display[["MAE", "RMSE", "R²"]] = metrics_display[["MAE", "RMSE", "R²"]].round(4)
-st.dataframe(metrics_display, use_container_width=True, hide_index=True)
-st.caption(
-    "Chronological held-out test metrics. The restored models reproduce the "
-    "original validation results exactly."
-)
+st.subheader("🤖 Model Comparison (Latest Daily Training Run)")
+comparison_metrics = load_model_comparison()
+
+if not comparison_metrics.empty:
+    display_metrics = comparison_metrics.copy()
+    display_metrics[["MAE", "RMSE", "R²"]] = display_metrics[["MAE", "RMSE", "R²"]].round(4)
+    st.dataframe(display_metrics, use_container_width=True, hide_index=True)
+    st.caption(
+        "Chronological held-out test metrics from the most recent automated daily "
+        "training run. Ridge, Random Forest, and XGBoost are compared per horizon; "
+        "the lowest-RMSE model is deployed to production for that horizon."
+    )
+else:
+    st.info(
+        "Model comparison data not available yet. It is generated automatically "
+        "by the daily training pipeline."
+    )
 
 st.subheader("🔍 SHAP Feature Importance")
 shap_df = load_shap()
